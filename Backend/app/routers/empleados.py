@@ -1,11 +1,19 @@
-from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlmodel import Session, select
+from fastapi import APIRouter, Depends, Query, status
+from sqlmodel import Session
 
 from app.database.config import get_session
-from app.models.models import Empleado, EmpleadoCreate, EmpleadoRead, EmpleadoUpdate
+from app.models.models import EmpleadoCreate, EmpleadoRead, EmpleadoUpdate
+from app.services.empleado_service import (
+    create_empleado,
+    delete_empleado,
+    get_all_empleados,
+    get_empleado_by_id,
+    search_empleados,
+    toggle_empleado_activo,
+    update_empleado,
+)
 
 router = APIRouter(prefix="/empleados", tags=["Empleados"])
 
@@ -14,78 +22,44 @@ SessionDep = Annotated[Session, Depends(get_session)]
 
 @router.get("/", response_model=list[EmpleadoRead])
 def listar_empleados(session: SessionDep):
-    empleados = session.exec(select(Empleado)).all()
-    return empleados
+    """Retorna todos los empleados."""
+    return get_all_empleados(session)
+
+
+@router.get("/buscar", response_model=list[EmpleadoRead])
+def buscar_empleados(
+    session: SessionDep,
+    q: str = Query(min_length=1, description="Texto a buscar en nombre o DNI"),
+):
+    """Busca empleados por nombre completo o DNI (búsqueda parcial, sin distinción de mayúsculas)."""
+    return search_empleados(q, session)
 
 
 @router.get("/{empleado_id}", response_model=EmpleadoRead)
 def obtener_empleado(empleado_id: int, session: SessionDep):
-    empleado = session.get(Empleado, empleado_id)
-    if not empleado:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Empleado con id {empleado_id} no encontrado",
-        )
-    return empleado
+    """Retorna un empleado según su id."""
+    return get_empleado_by_id(empleado_id, session)
 
 
 @router.post("/", response_model=EmpleadoRead, status_code=status.HTTP_201_CREATED)
 def crear_empleado(payload: EmpleadoCreate, session: SessionDep):
-    dni_existente = session.exec(
-        select(Empleado).where(Empleado.dni == payload.dni)
-    ).first()
-    if dni_existente:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Ya existe un empleado con el DNI {payload.dni}",
-        )
-    empleado = Empleado.model_validate(payload)
-    session.add(empleado)
-    session.commit()
-    session.refresh(empleado)
-    return empleado
+    """Crea un nuevo empleado con los datos recibidos."""
+    return create_empleado(payload, session)
 
 
 @router.patch("/{empleado_id}", response_model=EmpleadoRead)
-def actualizar_empleado(
-    empleado_id: int, payload: EmpleadoUpdate, session: SessionDep
-):
-    empleado = session.get(Empleado, empleado_id)
-    if not empleado:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Empleado con id {empleado_id} no encontrado",
-        )
+def actualizar_empleado(empleado_id: int, payload: EmpleadoUpdate, session: SessionDep):
+    """Actualiza parcialmente los datos de un empleado existente."""
+    return update_empleado(empleado_id, payload, session)
 
-    datos = payload.model_dump(exclude_unset=True)
 
-    if "dni" in datos:
-        conflicto = session.exec(
-            select(Empleado)
-            .where(Empleado.dni == datos["dni"])
-            .where(Empleado.id != empleado_id)
-        ).first()
-        if conflicto:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"El DNI {datos['dni']} ya está en uso por otro empleado",
-            )
-
-    empleado.sqlmodel_update(datos)
-    empleado.updated_at = datetime.now(timezone.utc)
-    session.add(empleado)
-    session.commit()
-    session.refresh(empleado)
-    return empleado
+@router.patch("/{empleado_id}/toggle-activo", response_model=EmpleadoRead)
+def toggle_activo_empleado(empleado_id: int, session: SessionDep):
+    """Activa o desactiva un empleado según su estado actual."""
+    return toggle_empleado_activo(empleado_id, session)
 
 
 @router.delete("/{empleado_id}", status_code=status.HTTP_204_NO_CONTENT)
 def eliminar_empleado(empleado_id: int, session: SessionDep):
-    empleado = session.get(Empleado, empleado_id)
-    if not empleado:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Empleado con id {empleado_id} no encontrado",
-        )
-    session.delete(empleado)
-    session.commit()
+    """Elimina un empleado según su id."""
+    delete_empleado(empleado_id, session)
