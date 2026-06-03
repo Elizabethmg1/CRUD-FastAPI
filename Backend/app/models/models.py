@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timezone
 
 from sqlmodel import Field, SQLModel
 
@@ -64,3 +64,55 @@ class EmpleadoUpdate(SQLModel):
     nombre_completo: str | None = Field(default=None, min_length=1, max_length=255)
     observaciones: str | None = None
     is_active: bool | None = None
+
+
+# ---------------------------------------------------------------------------
+# JornadaLaboral
+# ---------------------------------------------------------------------------
+
+
+class JornadaLaboralBase(SQLModel):
+    fecha: date = Field(description="Fecha de la jornada laboral")
+    hora_inicio: time = Field(description="Hora de inicio de la jornada")
+    hora_fin: time = Field(description="Hora de fin de la jornada")
+    cliente: str = Field(
+        min_length=1,
+        max_length=255,
+        description="Nombre del cliente al que corresponde la jornada",
+    )
+    direccion: str = Field(
+        min_length=1,
+        max_length=500,
+        description="Dirección donde se realiza la jornada",
+    )
+    descripcion: str | None = Field(
+        default=None,
+        description="Descripción u observaciones de la jornada",
+    )
+    empleado_id: int = Field(foreign_key="empleado.id", description="ID del empleado asignado")
+
+
+class JornadaLaboral(JornadaLaboralBase, TimestampMixin, table=True):
+    __tablename__ = "jornada_laboral"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+
+class JornadaLaboralCreate(JornadaLaboralBase):
+    pass
+
+
+class JornadaLaboralRead(JornadaLaboralBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class JornadaLaboralUpdate(SQLModel):
+    fecha: date | None = None
+    hora_inicio: time | None = None
+    hora_fin: time | None = None
+    cliente: str | None = Field(default=None, min_length=1, max_length=255)
+    direccion: str | None = Field(default=None, min_length=1, max_length=500)
+    descripcion: str | None = None
+    empleado_id: int | None = None
