@@ -1,9 +1,11 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
 from app.models.models import Empleado, JornadaLaboral, JornadaLaboralCreate, JornadaLaboralUpdate
+
+MAX_HORAS_JORNADA = 12
 
 
 def _get_or_404(jornada_id: int, session: Session) -> JornadaLaboral:
@@ -27,6 +29,71 @@ def _validar_empleado(empleado_id: int, session: Session) -> None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"El empleado con id {empleado_id} está inactivo",
+        )
+
+
+def _validar_duracion(hora_inicio: time, hora_fin: time) -> None:
+    """Lanza 422 si la jornada supera el máximo de horas permitidas."""
+    inicio_dt = datetime.combine(date.min, hora_inicio)
+    fin_dt = datetime.combine(date.min, hora_fin)
+    if (fin_dt - inicio_dt) > timedelta(hours=MAX_HORAS_JORNADA):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"La jornada no puede superar las {MAX_HORAS_JORNADA} horas",
+        )
+
+
+def _validar_solapamiento(
+    session: Session,
+    empleado_id: int,
+    fecha: date,
+    hora_inicio: time,
+    hora_fin: time,
+    exclude_id: int | None = None,
+) -> None:
+    """Lanza 409 si la jornada se solapa con otra del mismo empleado en la misma fecha."""
+    query = select(JornadaLaboral).where(
+        JornadaLaboral.empleado_id == empleado_id,
+        JornadaLaboral.fecha == fecha,
+        JornadaLaboral.hora_inicio < hora_fin,
+        JornadaLaboral.hora_fin > hora_inicio,
+    )
+    if exclude_id is not None:
+        query = query.where(JornadaLaboral.id != exclude_id)
+
+    conflicto = session.exec(query).first()
+    if conflicto:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"La jornada se solapa con la jornada id={conflicto.id} "
+                f"({conflicto.hora_inicio} - {conflicto.hora_fin}) del mismo empleado"
+            ),
+        )
+
+
+def _validar_duplicado(
+    session: Session,
+    empleado_id: int,
+    fecha: date,
+    hora_inicio: time,
+    hora_fin: time,
+    exclude_id: int | None = None,
+) -> None:
+    """Lanza 409 si ya existe una jornada idéntica para el mismo empleado, fecha y horario."""
+    query = select(JornadaLaboral).where(
+        JornadaLaboral.empleado_id == empleado_id,
+        JornadaLaboral.fecha == fecha,
+        JornadaLaboral.hora_inicio == hora_inicio,
+        JornadaLaboral.hora_fin == hora_fin,
+    )
+    if exclude_id is not None:
+        query = query.where(JornadaLaboral.id != exclude_id)
+
+    if session.exec(query).first():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ya existe una jornada idéntica para ese empleado en esa fecha y horario",
         )
 
 
@@ -79,6 +146,10 @@ def create_jornada(payload: JornadaLaboralCreate, session: Session) -> JornadaLa
             detail="La hora de fin debe ser posterior a la hora de inicio",
         )
 
+    _validar_duracion(payload.hora_inicio, payload.hora_fin)
+    _validar_duplicado(session, payload.empleado_id, payload.fecha, payload.hora_inicio, payload.hora_fin)
+    _validar_solapamiento(session, payload.empleado_id, payload.fecha, payload.hora_inicio, payload.hora_fin)
+
     jornada = JornadaLaboral.model_validate(payload)
     session.add(jornada)
     session.commit()
@@ -99,13 +170,20 @@ def update_jornada(
     if "empleado_id" in datos:
         _validar_empleado(datos["empleado_id"], session)
 
+    empleado_id = datos.get("empleado_id", jornada.empleado_id)
+    fecha = datos.get("fecha", jornada.fecha)
     hora_inicio = datos.get("hora_inicio", jornada.hora_inicio)
     hora_fin = datos.get("hora_fin", jornada.hora_fin)
+
     if hora_fin <= hora_inicio:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="La hora de fin debe ser posterior a la hora de inicio",
         )
+
+    _validar_duracion(hora_inicio, hora_fin)
+    _validar_duplicado(session, empleado_id, fecha, hora_inicio, hora_fin, exclude_id=jornada_id)
+    _validar_solapamiento(session, empleado_id, fecha, hora_inicio, hora_fin, exclude_id=jornada_id)
 
     jornada.sqlmodel_update(datos)
     jornada.updated_at = datetime.now(timezone.utc)
