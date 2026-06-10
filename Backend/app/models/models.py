@@ -190,6 +190,26 @@ class AsistenciaRead(SQLModel):
 
 
 # ---------------------------------------------------------------------------
+# Registro de horas
+# ---------------------------------------------------------------------------
+
+
+class RegistroHorasRead(SQLModel):
+    fecha: date
+    empleado: str
+    cliente: str
+    direccion: str
+    hora_entrada: str | None = None
+    hora_salida: str | None = None
+    horas_estimadas: float
+    horas_realizadas: float
+    horas_extras: float
+    horas_a_descontar: float
+    estado: str | None = None
+    message: str | None = None
+
+
+# ---------------------------------------------------------------------------
 # Respuesta estandarizada
 # ---------------------------------------------------------------------------
 

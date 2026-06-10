@@ -1,3 +1,4 @@
 requests
 sqlmodel
 fastapi[standard]
+openpyxl
