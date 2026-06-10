@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import enum
 from datetime import date, datetime, time, timezone
 
 from sqlmodel import Field, SQLModel
@@ -116,3 +117,83 @@ class JornadaLaboralUpdate(SQLModel):
     direccion: str | None = Field(default=None, min_length=1, max_length=500)
     descripcion: str | None = None
     empleado_id: int | None = None
+
+
+# ---------------------------------------------------------------------------
+# Cliente
+# ---------------------------------------------------------------------------
+
+
+class ClienteBase(SQLModel):
+    nombre: str = Field(
+        min_length=1,
+        max_length=255,
+        index=True,
+        description="Nombre del cliente",
+    )
+    direccion: str = Field(
+        min_length=1,
+        max_length=500,
+        description="Dirección principal del cliente",
+    )
+
+
+class Cliente(ClienteBase, table=True):
+    __tablename__ = "cliente"
+
+    id: int | None = Field(default=None, primary_key=True)
+
+
+class ClienteCreate(ClienteBase):
+    pass
+
+
+class ClienteRead(ClienteBase):
+    id: int
+
+
+# ---------------------------------------------------------------------------
+# Asistencia
+# ---------------------------------------------------------------------------
+
+
+class TipoAsistencia(str, enum.Enum):
+    entrada = "entrada"
+    salida = "salida"
+
+
+class Asistencia(SQLModel, table=True):
+    __tablename__ = "asistencia"
+
+    id: int | None = Field(default=None, primary_key=True)
+    tipo: TipoAsistencia = Field(description="Tipo de registro: entrada o salida")
+    empleado_id: int = Field(foreign_key="empleado.id", description="ID del empleado")
+    cliente_id: int = Field(foreign_key="cliente.id", description="ID del cliente")
+    direccion: str = Field(max_length=500, description="Dirección donde se registra la asistencia")
+    fecha_hora: datetime = Field(default_factory=utcnow, description="Fecha y hora del registro")
+
+
+class AsistenciaCreate(SQLModel):
+    tipo: TipoAsistencia
+    dni: str = Field(min_length=7, max_length=9, description="DNI del empleado")
+    cliente_id: int = Field(description="ID del cliente")
+    direccion: str = Field(min_length=1, max_length=500, description="Dirección del registro")
+
+
+class AsistenciaRead(SQLModel):
+    id: int
+    tipo: TipoAsistencia
+    dni: str
+    cliente: str
+    direccion: str
+    fecha_hora: datetime
+
+
+# ---------------------------------------------------------------------------
+# Respuesta estandarizada
+# ---------------------------------------------------------------------------
+
+
+class APIResponse(SQLModel):
+    success: bool
+    message: str
